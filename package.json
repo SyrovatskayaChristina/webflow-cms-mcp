@@ -1,0 +1,40 @@
+{
+  "name": "webflow-cms-mcp",
+  "version": "1.0.0",
+  "description": "MCP server exposing Webflow CMS as structured tools for AI agents — list collections, read/create/update items, validate payloads against the live collection schema, and publish the site.",
+  "type": "module",
+  "main": "build/index.js",
+  "bin": {
+    "webflow-cms-mcp": "build/index.js"
+  },
+  "scripts": {
+    "build": "tsc && chmod +x build/index.js",
+    "watch": "tsc --watch",
+    "start": "node build/index.js",
+    "inspector": "npx @modelcontextprotocol/inspector node build/index.js"
+  },
+  "files": [
+    "build"
+  ],
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "webflow",
+    "cms",
+    "ai-agents",
+    "llm-tools"
+  ],
+  "author": "Kristina Syrovatskaia",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "typescript": "^5.7.2"
+  }
+}
