@@ -18,8 +18,10 @@ This server addresses all three the same way: `create_item` and `update_item` fe
 
 | Tool | What it does |
 |---|---|
+| `list_sites` | List all Webflow sites this API token can access, with their site IDs |
 | `list_collections` | List all CMS collections on a site, with IDs, names, and slugs |
 | `get_collection_schema` | Get a collection's live field schema — slugs, types, required/editable flags |
+| `get_item_template` | Get a ready-to-fill fieldData skeleton for a collection, built from its live schema |
 | `list_items` | List items in a collection, with pagination and optional slug filter |
 | `get_item` | Get a single item by ID |
 | `create_item` | Create an item — validated against the live schema first |
@@ -30,15 +32,15 @@ This server addresses all three the same way: `create_item` and `update_item` fe
 
 ```
 ┌─────────────┐     stdio (JSON-RPC / MCP)     ┌──────────────────┐     HTTPS      ┌─────────────┐
-│  MCP client │ ──────────────────────────────▶│  webflow-cms-mcp │ ──────────────▶│ Webflow API  │
-│ (Claude, an │◀────────────────────────────── │                  │◀────────────── │     (v2)     │
-│  agent, …)  │        tool calls / results     │  • schema fetch  │   JSON over     │              │
-└─────────────┘                                 │  • validation    │   HTTPS         └─────────────┘
-                                                 │  • typed tools   │
-                                                 └──────────────────┘
+│  MCP client │ ──────────────────────────────▶│  webflow-cms-mcp │ ──────────────▶│ Webflow API │
+│ (Claude, an │◀────────────────────────────── │                  │◀────────────── │     (v2)    │
+│  agent, …)  │        tool calls / results    │  • schema fetch  │   JSON over    │             │
+└─────────────┘                                │  • validation    │   HTTPS        └─────────────┘
+                                               │  • typed tools   │
+                                               └──────────────────┘
 ```
 
-The server speaks MCP over stdio to whatever client launches it (Claude Desktop, Claude Code, or any other MCP-compatible agent host) and talks to Webflow's REST API over HTTPS using a bearer token.
+The server speaks MCP over stdio to whatever client launches it (Claude Code, Claude Desktop, or any other MCP-compatible agent host) and talks to Webflow's REST API over HTTPS using a bearer token.
 
 ## Setup
 
@@ -47,21 +49,63 @@ npm install
 npm run build
 ```
 
-Copy `.env.example` to `.env` and fill in a Webflow API token (Site settings → Apps & integrations → API access) and, optionally, a default site ID:
+Copy `.env.example` to `.env` and fill in a Webflow API token (Site settings → Apps & integrations → API access) — scopes needed: CMS Read, CMS Write, Sites Read, and Sites Publish if you'll use `publish_site`:
 
 ```bash
 cp .env.example .env
 ```
 
-### Run it directly
+Then open `.env` and fill in:
 
-```bash
-WEBFLOW_API_TOKEN=xxx WEBFLOW_SITE_ID=xxx node build/index.js
+```
+WEBFLOW_API_TOKEN=your_token_here
+WEBFLOW_SITE_ID=your_site_id_here
 ```
 
-### Use it from Claude Desktop / Claude Code
+`WEBFLOW_SITE_ID` is optional — every tool that needs a site ID also accepts one as a parameter, so you can omit it here and call `list_sites` to look one up instead. `.env` is only read for local runs (`npm run inspector`, `npm start`); a client like Claude Code or Claude Desktop sets environment variables directly in its own config, so `.env` is never consulted when launched that way.
 
-Add to your MCP client config (e.g. `claude_desktop_config.json`):
+### Try it in the MCP Inspector first
+
+```bash
+npm run inspector
+```
+
+Opens the [MCP Inspector](https://github.com/modelcontextprotocol/inspector) in your browser — lets you call each tool by hand and see the raw request/response JSON, without wiring up a full client. Good for a first sanity check before connecting a real agent.
+
+A typical first pass, in order: `list_sites` (no params) → copy a site ID → `list_collections` → copy a collection ID → `get_collection_schema` to see the real field names → `get_item_template` to get a fill-in-the-blanks skeleton → `create_item` with `isDraft: true` to test a write safely.
+
+### Use it from Claude Code
+
+```bash
+claude mcp add --transport stdio webflow-cms \
+  --env WEBFLOW_API_TOKEN=your_token_here \
+  --env WEBFLOW_SITE_ID=your_site_id_here \
+  -- node /absolute/path/to/webflow-cms-mcp/build/index.js
+```
+
+The path to `build/index.js` must be absolute. By default this registers the server only for you, in the current project (`--scope local`). To share it with a team via a committed config, use `--scope project` instead, which writes `.mcp.json` to the project root:
+
+```json
+{
+  "mcpServers": {
+    "webflow-cms": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["/absolute/path/to/webflow-cms-mcp/build/index.js"],
+      "env": {
+        "WEBFLOW_API_TOKEN": "${WEBFLOW_API_TOKEN}",
+        "WEBFLOW_SITE_ID": "${WEBFLOW_SITE_ID}"
+      }
+    }
+  }
+}
+```
+
+`${VAR}` pulls from your shell environment rather than hardcoding the secret into a file you might commit. Once added, just ask Claude Code something like *"list my Webflow collections"* — it calls the tools itself.
+
+### Use it from Claude Desktop
+
+Add to `claude_desktop_config.json`:
 
 ```json
 {
@@ -70,21 +114,15 @@ Add to your MCP client config (e.g. `claude_desktop_config.json`):
       "command": "node",
       "args": ["/absolute/path/to/webflow-cms-mcp/build/index.js"],
       "env": {
-        "WEBFLOW_API_TOKEN": "xxx",
-        "WEBFLOW_SITE_ID": "xxx"
+        "WEBFLOW_API_TOKEN": "your_token_here",
+        "WEBFLOW_SITE_ID": "your_site_id_here"
       }
     }
   }
 }
 ```
 
-### Inspect it interactively
-
-```bash
-npm run inspector
-```
-
-Opens the [MCP Inspector](https://github.com/modelcontextprotocol/inspector) so you can call tools and see raw request/response payloads without wiring up a full client.
+Restart Claude Desktop afterward for it to pick up the new server.
 
 ## Example
 
@@ -92,20 +130,20 @@ Once connected, an agent can do things like:
 
 > "List the fields on the `ai-models` collection, then create a draft item for a new model with name, slug, and a short performance summary."
 
-The agent calls `get_collection_schema` first, gets back the real field slugs, and `create_item` rejects the call if it guesses a field name that isn't in that list — catching the mismatch before anything is written to the CMS.
+The agent calls `get_collection_schema` (or `get_item_template`) first, gets back the real field slugs, and `create_item` rejects the call if it guesses a field name that isn't in that list — catching the mismatch before anything is written to the CMS.
 
 ## Scope and limitations
 
 This is a focused demonstration project, not a full Webflow API wrapper:
 
-- Covers Collections, Items, and Publish — not Assets, Forms, Ecommerce, or Site creation.
+- Covers Sites, Collections, Items, and Publish — not Assets, Forms, Ecommerce, or Site creation.
 - No OAuth flow; expects a long-lived API token (standard for single-site/server-to-server use).
 - Error handling surfaces the Webflow API's own error payloads rather than retry/backoff logic — a production deployment would want rate-limit handling around the Webflow API's documented limits.
-- Validation is schema-shape checking (field slugs, required fields, editability), not full type-coercion (e.g. it doesn't verify a "number" field actually got a number) — a natural next step.
+- Validation checks field slugs, required fields, and editability against the live schema, but doesn't type-coerce values itself — Webflow's own API still rejects a string where it expects a number, for example. `get_item_template` exists specifically to reduce that kind of mistake by showing the expected type up front.
 
 ## Tech
 
-TypeScript, [`@modelcontextprotocol/sdk`](https://github.com/modelcontextprotocol/typescript-sdk), [Zod](https://zod.dev) for tool input schemas, no framework — built directly against the Webflow Data API v2.
+TypeScript, [`@modelcontextprotocol/sdk`](https://github.com/modelcontextprotocol/typescript-sdk), [Zod](https://zod.dev) for tool input schemas, [`dotenv`](https://github.com/motdotla/dotenv) for local env loading, no framework — built directly against the Webflow Data API v2.
 
 ## License
 

@@ -67,3 +67,23 @@ export function validateFieldData(
 
   return { valid: errors.length === 0, errors, warnings };
 }
+
+/**
+ * Builds a ready-to-fill fieldData skeleton from a collection's live schema:
+ * every field slug as a key, with a placeholder hinting at its type and
+ * whether it's required. Meant to be copy-pasted into create_item/update_item
+ * and have the placeholders replaced with real values — so the caller (human
+ * or agent) doesn't have to hand-build the object by cross-referencing
+ * get_collection_schema's output themselves.
+ */
+export function buildFieldDataTemplate(
+  collection: WebflowCollection
+): Record<string, string> {
+  const template: Record<string, string> = {};
+  for (const field of collection.fields) {
+    if (!field.isEditable) continue; // can't be written anyway, skip it
+    const requiredTag = field.isRequired ? "required" : "optional";
+    template[field.slug] = `<${field.type}, ${requiredTag}>`;
+  }
+  return template;
+}

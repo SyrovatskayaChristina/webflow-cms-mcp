@@ -46,6 +46,14 @@ export interface WebflowCollectionSummary {
   slug: string;
 }
 
+export interface WebflowSite {
+  id: string;
+  workspaceId?: string;
+  displayName: string;
+  shortName: string;
+  lastPublished?: string | null;
+}
+
 export interface WebflowItem {
   id: string;
   cmsLocaleId?: string;
@@ -94,6 +102,11 @@ export class WebflowClient {
       return undefined as T;
     }
     return (await res.json()) as T;
+  }
+
+  async listSites(): Promise<WebflowSite[]> {
+    const data = await this.request<{ sites: WebflowSite[] }>(`/sites`);
+    return data.sites;
   }
 
   async listCollections(siteId: string): Promise<WebflowCollectionSummary[]> {

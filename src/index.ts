@@ -14,12 +14,17 @@
  * a free-text HTTP call the model has to get exactly right on its own.
  */
 
+import "dotenv/config";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { WebflowApiError, WebflowClient } from "./webflowClient.js";
-import { validateFieldData } from "./validation.js";
+import { buildFieldDataTemplate, validateFieldData } from "./validation.js";
 
+// Loads WEBFLOW_API_TOKEN / WEBFLOW_SITE_ID from a local .env file (if present)
+// into process.env. Only matters for local/Inspector runs — when a client like
+// Claude Desktop launches this server, it sets env vars directly and .env is
+// never read at all.
 const API_TOKEN = process.env.WEBFLOW_API_TOKEN ?? "";
 const DEFAULT_SITE_ID = process.env.WEBFLOW_SITE_ID; // optional convenience default
 
@@ -77,6 +82,13 @@ const server = new McpServer({
 });
 
 server.tool(
+  "list_sites",
+  "List all Webflow sites accessible to this API token, with their site IDs and names. Call this first if you don't already know the site ID — every other tool needs one.",
+  {},
+  async () => handleWebflowCall(() => webflow.listSites())
+);
+
+server.tool(
   "list_collections",
   "List all CMS collections on a Webflow site, with their IDs, names, and slugs.",
   {
@@ -97,6 +109,31 @@ server.tool(
   },
   async ({ collectionId }) =>
     handleWebflowCall(() => webflow.getCollectionSchema(collectionId))
+);
+
+server.tool(
+  "get_item_template",
+  "Get a ready-to-fill fieldData skeleton for a collection — every writable field's slug as a key, with a placeholder showing its type and whether it's required. Copy the result, replace the placeholders with real values, and pass it as fieldData to create_item — saves cross-referencing get_collection_schema by hand.",
+  {
+    collectionId: z.string().describe("Webflow collection ID."),
+  },
+  async ({ collectionId }) => {
+    try {
+      const schema = await webflow.getCollectionSchema(collectionId);
+      return textResult(buildFieldDataTemplate(schema));
+    } catch (err) {
+      if (err instanceof WebflowApiError) {
+        return errorResult(
+          `Webflow API error (${err.status} ${err.statusText}): ${JSON.stringify(
+            err.body
+          )}`
+        );
+      }
+      return errorResult(
+        `Error: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+  }
 );
 
 server.tool(
